@@ -4,6 +4,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { useCart } from '@/contexts/CartContext';
 import { Minus, Plus, Trash2, ShoppingBag } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { formatINR } from '@/lib/formatINR';
 
 const Cart = () => {
   const { items, removeFromCart, updateQuantity, total } = useCart();
@@ -51,7 +52,7 @@ const Cart = () => {
                     <div className="flex-1">
                       <h3 className="font-semibold text-lg">{item.name}</h3>
                       <p className="text-primary font-semibold mt-1">
-                        ${item.price.toFixed(2)}
+                        {formatINR(item.price)}
                       </p>
 
                       <div className="mt-3 flex items-center gap-4">
@@ -87,7 +88,7 @@ const Cart = () => {
 
                     <div className="text-right">
                       <p className="font-semibold text-lg">
-                        ${(item.price * item.quantity).toFixed(2)}
+                        {formatINR(item.price * item.quantity)}
                       </p>
                     </div>
                   </div>
@@ -104,7 +105,7 @@ const Cart = () => {
                 <div className="space-y-2">
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Subtotal</span>
-                    <span className="font-semibold">${total.toFixed(2)}</span>
+                    <span className="font-semibold">{formatINR(total)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Shipping</span>
@@ -113,7 +114,7 @@ const Cart = () => {
                   <div className="border-t pt-2">
                     <div className="flex justify-between text-lg font-bold">
                       <span>Total</span>
-                      <span className="text-primary">${total.toFixed(2)}</span>
+                      <span className="text-primary">{formatINR(total)}</span>
                     </div>
                   </div>
                 </div>

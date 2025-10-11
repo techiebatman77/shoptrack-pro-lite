@@ -4,6 +4,7 @@ import { ShoppingCart } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useCart } from '@/contexts/CartContext';
 import { Badge } from './ui/badge';
+import { formatINR } from '@/lib/formatINR';
 
 interface Product {
   id: string;
@@ -53,7 +54,7 @@ export const ProductCard = ({ product }: ProductCardProps) => {
         </p>
         <div className="flex items-center justify-between mt-3">
           <span className="text-2xl font-bold text-primary">
-            ${product.price.toFixed(2)}
+            {formatINR(product.price)}
           </span>
           {product.stock < 5 && product.stock > 0 && (
             <Badge variant="destructive">Only {product.stock} left</Badge>

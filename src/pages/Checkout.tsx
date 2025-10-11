@@ -8,6 +8,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { CheckCircle2 } from 'lucide-react';
+import { formatINR } from '@/lib/formatINR';
 
 const Checkout = () => {
   const { items, total, clearCart } = useCart();
@@ -140,7 +141,7 @@ const Checkout = () => {
                           {item.name} x {item.quantity}
                         </span>
                         <span className="font-semibold">
-                          ${(item.price * item.quantity).toFixed(2)}
+                          {formatINR(item.price * item.quantity)}
                         </span>
                       </div>
                     ))}
@@ -158,7 +159,7 @@ const Checkout = () => {
                 <div className="space-y-2">
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Subtotal</span>
-                    <span className="font-semibold">${total.toFixed(2)}</span>
+                    <span className="font-semibold">{formatINR(total)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Shipping</span>
@@ -167,7 +168,7 @@ const Checkout = () => {
                   <div className="border-t pt-2">
                     <div className="flex justify-between text-lg font-bold">
                       <span>Total</span>
-                      <span className="text-primary">${total.toFixed(2)}</span>
+                      <span className="text-primary">{formatINR(total)}</span>
                     </div>
                   </div>
                 </div>

@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { ShoppingCart, ArrowLeft } from 'lucide-react';
 import { useCart } from '@/contexts/CartContext';
 import { Skeleton } from '@/components/ui/skeleton';
+import { formatINR } from '@/lib/formatINR';
 
 interface Product {
   id: string;
@@ -110,7 +111,7 @@ const ProductDetail = () => {
             <div>
               <h1 className="text-4xl font-bold mb-2">{product.name}</h1>
               <p className="text-3xl font-bold text-primary">
-                ${product.price.toFixed(2)}
+                {formatINR(product.price)}
               </p>
             </div>
 
