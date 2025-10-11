@@ -7,6 +7,9 @@ import { toast } from 'sonner';
 interface Profile {
   id: string;
   email: string;
+}
+
+interface UserRole {
   role: 'admin' | 'customer';
 }
 
@@ -14,6 +17,7 @@ interface AuthContextType {
   user: User | null;
   session: Session | null;
   profile: Profile | null;
+  userRole: 'admin' | 'customer' | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string) => Promise<void>;
@@ -26,6 +30,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [userRole, setUserRole] = useState<'admin' | 'customer' | null>(null);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
@@ -41,6 +46,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           }, 0);
         } else {
           setProfile(null);
+          setUserRole(null);
         }
       }
     );
@@ -58,18 +64,34 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   }, []);
 
   const fetchProfile = async (userId: string) => {
-    const { data, error } = await supabase
+    // Fetch profile
+    const { data: profileData, error: profileError } = await supabase
       .from('profiles')
       .select('*')
       .eq('id', userId)
       .single();
 
-    if (error) {
-      console.error('Error fetching profile:', error);
+    if (profileError) {
+      console.error('Error fetching profile:', profileError);
       return;
     }
 
-    setProfile(data as Profile);
+    setProfile(profileData as Profile);
+
+    // Fetch user role from user_roles table
+    const { data: roleData, error: roleError } = await supabase
+      .from('user_roles')
+      .select('role')
+      .eq('user_id', userId)
+      .single();
+
+    if (roleError) {
+      console.error('Error fetching role:', roleError);
+      setUserRole('customer'); // Default to customer if role fetch fails
+      return;
+    }
+
+    setUserRole(roleData.role);
   };
 
   const signIn = async (email: string, password: string) => {
@@ -111,12 +133,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       throw error;
     }
     setProfile(null);
+    setUserRole(null);
     toast.success('Signed out successfully!');
     navigate('/auth');
   };
 
   return (
-    <AuthContext.Provider value={{ user, session, profile, loading, signIn, signUp, signOut }}>
+    <AuthContext.Provider value={{ user, session, profile, userRole, loading, signIn, signUp, signOut }}>
       {children}
     </AuthContext.Provider>
   );

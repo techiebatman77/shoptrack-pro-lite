@@ -14,7 +14,7 @@ import {
 import { Badge } from './ui/badge';
 
 export const Navbar = () => {
-  const { user, profile, signOut } = useAuth();
+  const { user, profile, userRole, signOut } = useAuth();
   const { items } = useCart();
   const navigate = useNavigate();
 
@@ -55,12 +55,12 @@ export const Navbar = () => {
                 <DropdownMenuContent align="end">
                   <DropdownMenuLabel>
                     {profile?.email}
-                    {profile?.role === 'admin' && (
+                    {userRole === 'admin' && (
                       <Badge className="ml-2" variant="secondary">Admin</Badge>
                     )}
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />
-                  {profile?.role === 'admin' && (
+                  {userRole === 'admin' && (
                     <DropdownMenuItem onClick={() => navigate('/dashboard')}>
                       <LayoutDashboard className="mr-2 h-4 w-4" />
                       Dashboard

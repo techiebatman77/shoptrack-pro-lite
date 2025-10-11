@@ -6,6 +6,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { z } from 'zod';
 import {
   Table,
   TableBody,
@@ -67,8 +68,32 @@ interface InventoryLog {
   products: { name: string };
 }
 
+// Zod schema for product validation
+const productSchema = z.object({
+  name: z.string()
+    .trim()
+    .min(1, 'Name is required')
+    .max(200, 'Name must be less than 200 characters'),
+  description: z.string()
+    .trim()
+    .max(2000, 'Description must be less than 2000 characters')
+    .nullable(),
+  price: z.number()
+    .positive('Price must be greater than 0')
+    .max(10000000, 'Price must be less than 10,000,000'),
+  stock: z.number()
+    .int('Stock must be a whole number')
+    .min(0, 'Stock cannot be negative')
+    .max(1000000, 'Stock must be less than 1,000,000'),
+  category_id: z.string().uuid('Invalid category').nullable(),
+  image_url: z.string()
+    .url('Must be a valid URL')
+    .max(500, 'URL must be less than 500 characters')
+    .nullable(),
+});
+
 const Dashboard = () => {
-  const { profile, loading: authLoading } = useAuth();
+  const { userRole, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const [products, setProducts] = useState<Product[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
@@ -78,17 +103,17 @@ const Dashboard = () => {
   const [dialogOpen, setDialogOpen] = useState(false);
 
   useEffect(() => {
-    if (!authLoading && profile?.role !== 'admin') {
+    if (!authLoading && userRole !== 'admin') {
       navigate('/');
       toast.error('Access denied. Admin only.');
     }
-  }, [profile, authLoading, navigate]);
+  }, [userRole, authLoading, navigate]);
 
   useEffect(() => {
-    if (profile?.role === 'admin') {
+    if (userRole === 'admin') {
       fetchData();
     }
-  }, [profile]);
+  }, [userRole]);
 
   const fetchData = async () => {
     const [productsRes, ordersRes, categoriesRes, logsRes] = await Promise.all([
@@ -119,39 +144,71 @@ const Dashboard = () => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
     
-    const productData = {
+    // Prepare raw data
+    const rawData = {
       name: formData.get('name') as string,
-      description: formData.get('description') as string,
+      description: (formData.get('description') as string) || null,
       price: Number(formData.get('price')),
       stock: Number(formData.get('stock')),
-      category_id: formData.get('category_id') as string || null,
-      image_url: formData.get('image_url') as string,
+      category_id: (formData.get('category_id') as string) || null,
+      image_url: (formData.get('image_url') as string) || null,
     };
 
-    if (editProduct) {
-      const { error } = await supabase
-        .from('products')
-        .update(productData)
-        .eq('id', editProduct.id);
+    // Validate with Zod schema
+    try {
+      const validatedData = productSchema.parse(rawData);
 
-      if (error) {
-        toast.error('Failed to update product');
-        return;
-      }
-      toast.success('Product updated!');
-    } else {
-      const { error } = await supabase.from('products').insert(productData);
+      // Type assertion to match Supabase expected type
+      type ProductInsert = {
+        name: string;
+        description: string | null;
+        price: number;
+        stock: number;
+        category_id: string | null;
+        image_url: string | null;
+      };
 
-      if (error) {
-        toast.error('Failed to create product');
-        return;
+      const productData: ProductInsert = {
+        name: validatedData.name,
+        description: validatedData.description,
+        price: validatedData.price,
+        stock: validatedData.stock,
+        category_id: validatedData.category_id,
+        image_url: validatedData.image_url,
+      };
+
+      if (editProduct) {
+        const { error } = await supabase
+          .from('products')
+          .update(productData)
+          .eq('id', editProduct.id);
+
+        if (error) {
+          toast.error('Failed to update product: ' + error.message);
+          return;
+        }
+        toast.success('Product updated!');
+      } else {
+        const { error } = await supabase.from('products').insert(productData);
+
+        if (error) {
+          toast.error('Failed to create product: ' + error.message);
+          return;
+        }
+        toast.success('Product created!');
       }
-      toast.success('Product created!');
+
+      setDialogOpen(false);
+      setEditProduct(null);
+      fetchData();
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        const firstError = error.errors[0];
+        toast.error(`Validation error: ${firstError.message}`);
+      } else {
+        toast.error('An unexpected error occurred');
+      }
     }
-
-    setDialogOpen(false);
-    setEditProduct(null);
-    fetchData();
   };
 
   const handleDeleteProduct = async (id: string) => {
@@ -221,7 +278,7 @@ const Dashboard = () => {
     criticalStock: products.filter((p) => p.stock < 5).length,
   };
 
-  if (authLoading || profile?.role !== 'admin') {
+  if (authLoading || userRole !== 'admin') {
     return null;
   }
 
