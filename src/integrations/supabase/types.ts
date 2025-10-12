@@ -135,31 +135,55 @@ export type Database = {
           category_id: string | null
           created_at: string | null
           description: string | null
+          gst_rate: number | null
           id: string
           image_url: string | null
+          lead_time_days: number | null
           name: string
           price: number
+          reorder_point: number | null
+          sku: string | null
           stock: number
+          supplier_contact: string | null
+          supplier_id: string | null
+          supplier_name: string | null
+          variants: Json | null
         }
         Insert: {
           category_id?: string | null
           created_at?: string | null
           description?: string | null
+          gst_rate?: number | null
           id?: string
           image_url?: string | null
+          lead_time_days?: number | null
           name: string
           price: number
+          reorder_point?: number | null
+          sku?: string | null
           stock?: number
+          supplier_contact?: string | null
+          supplier_id?: string | null
+          supplier_name?: string | null
+          variants?: Json | null
         }
         Update: {
           category_id?: string | null
           created_at?: string | null
           description?: string | null
+          gst_rate?: number | null
           id?: string
           image_url?: string | null
+          lead_time_days?: number | null
           name?: string
           price?: number
+          reorder_point?: number | null
+          sku?: string | null
           stock?: number
+          supplier_contact?: string | null
+          supplier_id?: string | null
+          supplier_name?: string | null
+          variants?: Json | null
         }
         Relationships: [
           {
@@ -167,6 +191,13 @@ export type Database = {
             columns: ["category_id"]
             isOneToOne: false
             referencedRelation: "categories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "products_supplier_id_fkey"
+            columns: ["supplier_id"]
+            isOneToOne: false
+            referencedRelation: "suppliers"
             referencedColumns: ["id"]
           },
         ]
@@ -186,6 +217,39 @@ export type Database = {
           created_at?: string | null
           email?: string
           id?: string
+        }
+        Relationships: []
+      }
+      suppliers: {
+        Row: {
+          address: string | null
+          contact_person: string | null
+          created_at: string | null
+          email: string | null
+          id: string
+          name: string
+          phone: string | null
+          rating: number | null
+        }
+        Insert: {
+          address?: string | null
+          contact_person?: string | null
+          created_at?: string | null
+          email?: string | null
+          id?: string
+          name: string
+          phone?: string | null
+          rating?: number | null
+        }
+        Update: {
+          address?: string | null
+          contact_person?: string | null
+          created_at?: string | null
+          email?: string | null
+          id?: string
+          name?: string
+          phone?: string | null
+          rating?: number | null
         }
         Relationships: []
       }

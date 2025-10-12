@@ -6,6 +6,17 @@ import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { toast } from 'sonner';
+import { 
+  Package, DollarSign, ShoppingCart, AlertCircle, Plus, Download, 
+  TrendingUp, BarChart3, Users, PackageCheck, Search, QrCode 
+} from 'lucide-react';
+import { formatINR } from '@/lib/formatINR';
 import { z } from 'zod';
 import {
   Table,
@@ -22,19 +33,16 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { toast } from 'sonner';
-import { Package, DollarSign, ShoppingCart, AlertCircle, Plus, Download, TrendingUp } from 'lucide-react';
-import { formatINR } from '@/lib/formatINR';
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { 
+  PieChart, Pie, Cell, LineChart, Line, XAxis, YAxis, CartesianGrid, 
+  Tooltip as RechartsTooltip, Legend, ResponsiveContainer, BarChart, Bar 
+} from 'recharts';
 
 interface Product {
   id: string;
@@ -44,6 +52,22 @@ interface Product {
   stock: number;
   category_id: string | null;
   image_url: string | null;
+  sku: string | null;
+  variants: any;
+  supplier_id: string | null;
+  supplier_name: string | null;
+  lead_time_days: number;
+  reorder_point: number;
+  gst_rate: number;
+}
+
+interface Supplier {
+  id: string;
+  name: string;
+  contact_person: string | null;
+  email: string | null;
+  phone: string | null;
+  rating: number;
 }
 
 interface Category {
@@ -68,39 +92,45 @@ interface InventoryLog {
   products: { name: string };
 }
 
-// Zod schema for product validation
 const productSchema = z.object({
-  name: z.string()
-    .trim()
-    .min(1, 'Name is required')
-    .max(200, 'Name must be less than 200 characters'),
-  description: z.string()
-    .trim()
-    .max(2000, 'Description must be less than 2000 characters')
-    .nullable(),
-  price: z.number()
-    .positive('Price must be greater than 0')
-    .max(10000000, 'Price must be less than 10,000,000'),
-  stock: z.number()
-    .int('Stock must be a whole number')
-    .min(0, 'Stock cannot be negative')
-    .max(1000000, 'Stock must be less than 1,000,000'),
-  category_id: z.string().uuid('Invalid category').nullable(),
-  image_url: z.string()
-    .url('Must be a valid URL')
-    .max(500, 'URL must be less than 500 characters')
-    .nullable(),
+  name: z.string().trim().min(1, 'Name is required').max(200),
+  description: z.string().trim().max(2000).nullable(),
+  price: z.number().positive('Price must be greater than 0').max(10000000),
+  stock: z.number().int().min(0).max(1000000),
+  category_id: z.string().uuid().nullable(),
+  image_url: z.string().url().max(500).nullable(),
+  sku: z.string().trim().min(3, 'SKU must be at least 3 characters').max(50).nullable(),
+  supplier_id: z.string().uuid().nullable(),
+  lead_time_days: z.number().int().min(1).max(365),
+  reorder_point: z.number().int().min(0).max(10000),
+  gst_rate: z.number().min(0).max(100),
 });
+
+const supplierSchema = z.object({
+  name: z.string().trim().min(1, 'Name is required').max(200),
+  contact_person: z.string().trim().max(200).nullable(),
+  email: z.string().email('Invalid email').nullable(),
+  phone: z.string().trim().max(20).nullable(),
+  rating: z.number().min(1).max(5),
+});
+
+const CHART_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
 
 const Dashboard = () => {
   const { userRole, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const [products, setProducts] = useState<Product[]>([]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [inventoryLogs, setInventoryLogs] = useState<InventoryLog[]>([]);
   const [editProduct, setEditProduct] = useState<Product | null>(null);
-  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editSupplier, setEditSupplier] = useState<Supplier | null>(null);
+  const [productDialogOpen, setProductDialogOpen] = useState(false);
+  const [supplierDialogOpen, setSupplierDialogOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [scannedSKU, setScannedSKU] = useState('');
 
   useEffect(() => {
     if (!authLoading && userRole !== 'admin') {
@@ -116,11 +146,12 @@ const Dashboard = () => {
   }, [userRole]);
 
   const fetchData = async () => {
-    const [productsRes, ordersRes, categoriesRes, logsRes] = await Promise.all([
-      supabase.from('products').select('*'),
+    const [productsRes, suppliersRes, ordersRes, categoriesRes, logsRes] = await Promise.all([
+      supabase.from('products').select('*').order('created_at', { ascending: false }),
+      supabase.from('suppliers').select('*').order('name'),
       supabase.from('orders').select('id, total, status, created_at, user_id, profiles!orders_user_id_fkey(email)'),
       supabase.from('categories').select('*'),
-      supabase.from('inventory_logs').select('*, products(name)').order('date', { ascending: false }).limit(10),
+      supabase.from('inventory_logs').select('*, products(name)').order('date', { ascending: false }).limit(50),
     ]);
 
     const productsData = productsRes.data || [];
@@ -135,6 +166,7 @@ const Dashboard = () => {
     })) as InventoryLog[];
 
     setProducts(productsData);
+    setSuppliers(suppliersRes.data || []);
     setOrders(ordersData);
     setCategories(categoriesRes.data || []);
     setInventoryLogs(logsData);
@@ -144,7 +176,6 @@ const Dashboard = () => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
     
-    // Prepare raw data
     const rawData = {
       name: formData.get('name') as string,
       description: (formData.get('description') as string) || null,
@@ -152,29 +183,28 @@ const Dashboard = () => {
       stock: Number(formData.get('stock')),
       category_id: (formData.get('category_id') as string) || null,
       image_url: (formData.get('image_url') as string) || null,
+      sku: (formData.get('sku') as string) || null,
+      supplier_id: (formData.get('supplier_id') as string) || null,
+      lead_time_days: Number(formData.get('lead_time_days')) || 7,
+      reorder_point: Number(formData.get('reorder_point')) || 10,
+      gst_rate: Number(formData.get('gst_rate')) || 18,
     };
 
-    // Validate with Zod schema
     try {
       const validatedData = productSchema.parse(rawData);
 
-      // Type assertion to match Supabase expected type
-      type ProductInsert = {
-        name: string;
-        description: string | null;
-        price: number;
-        stock: number;
-        category_id: string | null;
-        image_url: string | null;
-      };
-
-      const productData: ProductInsert = {
+      const productData = {
         name: validatedData.name,
         description: validatedData.description,
         price: validatedData.price,
         stock: validatedData.stock,
         category_id: validatedData.category_id,
         image_url: validatedData.image_url,
+        sku: validatedData.sku,
+        supplier_id: validatedData.supplier_id,
+        lead_time_days: validatedData.lead_time_days,
+        reorder_point: validatedData.reorder_point,
+        gst_rate: validatedData.gst_rate,
       };
 
       if (editProduct) {
@@ -183,76 +213,102 @@ const Dashboard = () => {
           .update(productData)
           .eq('id', editProduct.id);
 
-        if (error) {
-          toast.error('Failed to update product: ' + error.message);
-          return;
-        }
+        if (error) throw error;
         toast.success('Product updated!');
       } else {
-        const { error } = await supabase.from('products').insert(productData);
-
-        if (error) {
-          toast.error('Failed to create product: ' + error.message);
-          return;
-        }
+        const { error } = await supabase.from('products').insert([productData]);
+        if (error) throw error;
         toast.success('Product created!');
       }
 
-      setDialogOpen(false);
+      setProductDialogOpen(false);
       setEditProduct(null);
       fetchData();
     } catch (error) {
       if (error instanceof z.ZodError) {
-        const firstError = error.errors[0];
-        toast.error(`Validation error: ${firstError.message}`);
+        toast.error(`Validation error: ${error.errors[0].message}`);
       } else {
-        toast.error('An unexpected error occurred');
+        toast.error('Failed to save product');
+      }
+    }
+  };
+
+  const handleSaveSupplier = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    
+    const rawData = {
+      name: formData.get('name') as string,
+      contact_person: (formData.get('contact_person') as string) || null,
+      email: (formData.get('email') as string) || null,
+      phone: (formData.get('phone') as string) || null,
+      rating: Number(formData.get('rating')) || 3,
+    };
+
+    try {
+      const validatedData = supplierSchema.parse(rawData);
+
+      const supplierData = {
+        name: validatedData.name,
+        contact_person: validatedData.contact_person,
+        email: validatedData.email,
+        phone: validatedData.phone,
+        rating: validatedData.rating,
+      };
+
+      if (editSupplier) {
+        const { error } = await supabase
+          .from('suppliers')
+          .update(supplierData)
+          .eq('id', editSupplier.id);
+        if (error) throw error;
+        toast.success('Supplier updated!');
+      } else {
+        const { error } = await supabase.from('suppliers').insert([supplierData]);
+        if (error) throw error;
+        toast.success('Supplier created!');
+      }
+
+      setSupplierDialogOpen(false);
+      setEditSupplier(null);
+      fetchData();
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        toast.error(`Validation error: ${error.errors[0].message}`);
+      } else {
+        toast.error('Failed to save supplier');
       }
     }
   };
 
   const handleDeleteProduct = async (id: string) => {
     if (!confirm('Delete this product?')) return;
-
     const { error } = await supabase.from('products').delete().eq('id', id);
-
     if (error) {
       toast.error('Failed to delete product');
       return;
     }
-
     toast.success('Product deleted');
-    fetchData();
-  };
-
-  const handleUpdateOrderStatus = async (orderId: string, status: string) => {
-    const { error } = await supabase
-      .from('orders')
-      .update({ status })
-      .eq('id', orderId);
-
-    if (error) {
-      toast.error('Failed to update order');
-      return;
-    }
-
-    toast.success('Order status updated');
     fetchData();
   };
 
   const exportToCSV = () => {
     const csv = [
-      ['Name', 'Description', 'Price (INR)', 'Stock', 'Category', 'Total Value (INR)'],
-      ...products.map((p) => {
-        const category = categories.find(c => c.id === p.category_id)?.name || '';
-        const totalValue = p.price * p.stock;
+      ['SKU', 'Name', 'Price (INR)', 'Stock', 'GST Rate (%)', 'Price with GST', 'Total Value', 'Supplier', 'Reorder Point'],
+      ...filteredProducts.map((p) => {
+        const supplier = suppliers.find(s => s.id === p.supplier_id)?.name || '-';
+        const priceWithGST = p.price * (1 + p.gst_rate / 100);
+        const totalValue = priceWithGST * p.stock;
         return [
+          p.sku || '-',
           p.name,
-          p.description || '',
           p.price.toString(),
           p.stock.toString(),
-          category,
-          totalValue.toString()
+          p.gst_rate.toString(),
+          priceWithGST.toFixed(2),
+          totalValue.toFixed(2),
+          supplier,
+          p.reorder_point.toString()
         ];
       }),
     ]
@@ -268,26 +324,74 @@ const Dashboard = () => {
     toast.success('Exported to CSV');
   };
 
-  // Calculate comprehensive stats
+  const handleSKUScan = () => {
+    if (!scannedSKU.trim()) {
+      toast.error('Please enter a SKU');
+      return;
+    }
+    
+    const product = products.find(p => p.sku?.toLowerCase() === scannedSKU.toLowerCase());
+    if (product) {
+      setEditProduct(product);
+      setProductDialogOpen(true);
+      setScannerOpen(false);
+      setScannedSKU('');
+      toast.success(`Found: ${product.name}`);
+    } else {
+      toast.error('Product not found');
+    }
+  };
+
+  // Filter products by search query
+  const filteredProducts = products.filter(p => 
+    p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    p.sku?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    categories.find(c => c.id === p.category_id)?.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  // Calculate stats
   const stats = {
     totalProducts: products.length,
     totalOrders: orders.length,
     totalRevenue: orders.reduce((sum, o) => sum + Number(o.total), 0),
     lowStockItems: products.filter((p) => p.stock < 10).length,
-    totalInventoryValue: products.reduce((sum, p) => sum + (p.price * p.stock), 0),
+    totalInventoryValue: products.reduce((sum, p) => sum + (p.price * (1 + p.gst_rate / 100) * p.stock), 0),
     criticalStock: products.filter((p) => p.stock < 5).length,
+    needsReorder: products.filter((p) => p.stock <= p.reorder_point).length,
+  };
+
+  // Chart data
+  const categoryData = categories.map(cat => ({
+    name: cat.name,
+    value: products.filter(p => p.category_id === cat.id).length,
+    stock: products.filter(p => p.category_id === cat.id).reduce((sum, p) => sum + p.stock, 0),
+  })).filter(d => d.value > 0);
+
+  const stockDistribution = [
+    { name: 'Critical (<5)', value: stats.criticalStock, color: '#ef4444' },
+    { name: 'Low (5-10)', value: stats.lowStockItems - stats.criticalStock, color: '#f59e0b' },
+    { name: 'Good (>10)', value: products.length - stats.lowStockItems, color: '#10b981' },
+  ];
+
+  // ABC Analysis (products by value)
+  const productsByValue = [...products]
+    .map(p => ({
+      name: p.name,
+      value: p.price * (1 + p.gst_rate / 100) * p.stock
+    }))
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 10);
+
+  const getStockBadge = (stock: number, reorderPoint: number) => {
+    if (stock === 0) return <Badge variant="destructive">Out of Stock</Badge>;
+    if (stock < 5) return <Badge variant="destructive">{stock}</Badge>;
+    if (stock <= reorderPoint) return <Badge className="bg-yellow-500">{stock}</Badge>;
+    return <Badge variant="secondary">{stock}</Badge>;
   };
 
   if (authLoading || userRole !== 'admin') {
     return null;
   }
-
-  const getStockBadge = (stock: number) => {
-    if (stock === 0) return <Badge variant="destructive">Out of Stock</Badge>;
-    if (stock < 5) return <Badge variant="destructive">{stock}</Badge>;
-    if (stock < 10) return <Badge className="bg-yellow-500">{stock}</Badge>;
-    return <Badge variant="secondary">{stock}</Badge>;
-  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -295,350 +399,453 @@ const Dashboard = () => {
 
       <div className="container mx-auto px-4 py-8">
         <div className="mb-8 flex items-center justify-between">
-          <h1 className="text-4xl font-bold">Admin Dashboard</h1>
+          <h1 className="text-4xl font-bold">Inventory Management</h1>
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" onClick={() => setScannerOpen(true)}>
+              <QrCode className="mr-2 h-4 w-4" />
+              Scan SKU
+            </Button>
+          </div>
         </div>
 
-        {/* Enhanced Stats */}
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-          <Card className="border-l-4 border-l-primary">
+        {/* Quick Stats */}
+        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+          <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm font-medium">Total Products</CardTitle>
               <Package className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{stats.totalProducts}</div>
-              <p className="text-xs text-muted-foreground mt-1">Across all categories</p>
             </CardContent>
           </Card>
 
-          <Card className="border-l-4 border-l-green-500">
+          <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium">Total Inventory Value</CardTitle>
-              <TrendingUp className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{formatINR(stats.totalInventoryValue)}</div>
-              <p className="text-xs text-muted-foreground mt-1">Current stock worth</p>
-            </CardContent>
-          </Card>
-
-          <Card className="border-l-4 border-l-yellow-500">
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium">Items Needing Restock</CardTitle>
-              <AlertCircle className="h-4 w-4 text-yellow-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-yellow-600">{stats.lowStockItems}</div>
-              <p className="text-xs text-muted-foreground mt-1">Stock below 10 units</p>
-            </CardContent>
-          </Card>
-
-          <Card className="border-l-4 border-l-blue-500">
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium">Total Orders</CardTitle>
-              <ShoppingCart className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats.totalOrders}</div>
-              <p className="text-xs text-muted-foreground mt-1">All time orders</p>
-            </CardContent>
-          </Card>
-
-          <Card className="border-l-4 border-l-green-600">
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium">Total Revenue</CardTitle>
+              <CardTitle className="text-sm font-medium">Inventory Value (with GST)</CardTitle>
               <DollarSign className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{formatINR(stats.totalRevenue)}</div>
-              <p className="text-xs text-muted-foreground mt-1">From all orders</p>
+              <div className="text-2xl font-bold">{formatINR(stats.totalInventoryValue)}</div>
             </CardContent>
           </Card>
 
-          <Card className="border-l-4 border-l-red-500">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium">Needs Reorder</CardTitle>
+              <AlertCircle className="h-4 w-4 text-yellow-500" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-yellow-600">{stats.needsReorder}</div>
+            </CardContent>
+          </Card>
+
+          <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm font-medium">Critical Stock</CardTitle>
-              <AlertCircle className="h-4 w-4 text-destructive" />
+              <PackageCheck className="h-4 w-4 text-destructive" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-destructive">{stats.criticalStock}</div>
-              <p className="text-xs text-muted-foreground mt-1">Below 5 units - urgent!</p>
             </CardContent>
           </Card>
         </div>
 
-        {/* Products Table */}
-        <Card className="mb-8">
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>Inventory Management</CardTitle>
-            <div className="flex gap-2">
-              <Button size="sm" variant="outline" onClick={exportToCSV}>
-                <Download className="mr-2 h-4 w-4" />
-                Export CSV
-              </Button>
-              <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-                <DialogTrigger asChild>
-                  <Button size="sm" onClick={() => setEditProduct(null)}>
-                    <Plus className="mr-2 h-4 w-4" />
-                    Add Product
+        <Tabs defaultValue="inventory" className="space-y-6">
+          <TabsList className="grid w-full grid-cols-4">
+            <TabsTrigger value="inventory">Inventory</TabsTrigger>
+            <TabsTrigger value="analytics">Analytics</TabsTrigger>
+            <TabsTrigger value="suppliers">Suppliers</TabsTrigger>
+            <TabsTrigger value="orders">Orders</TabsTrigger>
+          </TabsList>
+
+          {/* Inventory Tab */}
+          <TabsContent value="inventory" className="space-y-6">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <CardTitle>Product Inventory</CardTitle>
+                <div className="flex gap-2">
+                  <div className="relative">
+                    <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Search products, SKU..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="pl-8 w-64"
+                    />
+                  </div>
+                  <Button size="sm" variant="outline" onClick={exportToCSV}>
+                    <Download className="mr-2 h-4 w-4" />
+                    Export CSV
                   </Button>
-                </DialogTrigger>
-                <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-                  <DialogHeader>
-                    <DialogTitle>
-                      {editProduct ? 'Edit Product' : 'Add Product'}
-                    </DialogTitle>
-                  </DialogHeader>
-                  <form onSubmit={handleSaveProduct} className="space-y-4">
-                    <div>
-                      <Label htmlFor="name">Name</Label>
-                      <Input
-                        id="name"
-                        name="name"
-                        defaultValue={editProduct?.name || ''}
-                        required
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="description">Description</Label>
-                      <Textarea
-                        id="description"
-                        name="description"
-                        rows={4}
-                        defaultValue={editProduct?.description || ''}
-                        placeholder="Enter detailed product description..."
-                      />
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <Label htmlFor="price">Price (INR)</Label>
-                        <Input
-                          id="price"
-                          name="price"
-                          type="number"
-                          step="1"
-                          defaultValue={editProduct?.price || ''}
-                          required
-                        />
-                      </div>
-                      <div>
-                        <Label htmlFor="stock">Stock</Label>
-                        <Input
-                          id="stock"
-                          name="stock"
-                          type="number"
-                          defaultValue={editProduct?.stock || ''}
-                          required
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <Label htmlFor="category_id">Category</Label>
-                      <Select name="category_id" defaultValue={editProduct?.category_id || ''}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select category" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {categories.map((cat) => (
-                            <SelectItem key={cat.id} value={cat.id}>
-                              {cat.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div>
-                      <Label htmlFor="image_url">Image URL</Label>
-                      <Input
-                        id="image_url"
-                        name="image_url"
-                        type="url"
-                        defaultValue={editProduct?.image_url || ''}
-                        placeholder="https://..."
-                      />
-                    </div>
-                    <Button type="submit" className="w-full">
-                      {editProduct ? 'Update Product' : 'Create Product'}
-                    </Button>
-                  </form>
-                </DialogContent>
-              </Dialog>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Description</TableHead>
-                    <TableHead>Category</TableHead>
-                    <TableHead>Price</TableHead>
-                    <TableHead>Stock</TableHead>
-                    <TableHead>Total Value</TableHead>
-                    <TableHead>Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {products.map((product) => {
-                    const category = categories.find(c => c.id === product.category_id);
-                    const totalValue = product.price * product.stock;
-                    return (
-                      <TableRow key={product.id} className={product.stock < 5 ? 'bg-destructive/5' : ''}>
-                        <TableCell className="font-medium">{product.name}</TableCell>
-                        <TableCell>
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <div className="max-w-xs truncate cursor-help">
-                                  {product.description || 'No description'}
-                                </div>
-                              </TooltipTrigger>
-                              <TooltipContent className="max-w-sm">
-                                <p>{product.description || 'No description'}</p>
-                              </TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline">{category?.name || 'N/A'}</Badge>
-                        </TableCell>
-                        <TableCell className="font-semibold">{formatINR(product.price)}</TableCell>
-                        <TableCell>{getStockBadge(product.stock)}</TableCell>
-                        <TableCell className="font-semibold text-green-600">
-                          {formatINR(totalValue)}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex gap-2">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => {
-                                setEditProduct(product);
-                                setDialogOpen(true);
-                              }}
-                            >
-                              Edit
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="destructive"
-                              onClick={() => handleDeleteProduct(product.id)}
-                            >
-                              Delete
-                            </Button>
+                  <Dialog open={productDialogOpen} onOpenChange={setProductDialogOpen}>
+                    <DialogTrigger asChild>
+                      <Button size="sm" onClick={() => setEditProduct(null)}>
+                        <Plus className="mr-2 h-4 w-4" />
+                        Add Product
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+                      <DialogHeader>
+                        <DialogTitle>{editProduct ? 'Edit Product' : 'Add Product'}</DialogTitle>
+                      </DialogHeader>
+                      <form onSubmit={handleSaveProduct} className="space-y-4">
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <Label htmlFor="name">Product Name *</Label>
+                            <Input id="name" name="name" defaultValue={editProduct?.name || ''} required />
                           </div>
+                          <div>
+                            <Label htmlFor="sku">SKU</Label>
+                            <Input id="sku" name="sku" defaultValue={editProduct?.sku || ''} placeholder="PROD-001" />
+                          </div>
+                        </div>
+
+                        <div>
+                          <Label htmlFor="description">Description</Label>
+                          <Textarea id="description" name="description" rows={3} defaultValue={editProduct?.description || ''} />
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-4">
+                          <div>
+                            <Label htmlFor="price">Price (INR) *</Label>
+                            <Input id="price" name="price" type="number" step="1" defaultValue={editProduct?.price || ''} required />
+                          </div>
+                          <div>
+                            <Label htmlFor="gst_rate">GST Rate (%) *</Label>
+                            <Input id="gst_rate" name="gst_rate" type="number" step="0.01" defaultValue={editProduct?.gst_rate || 18} required />
+                          </div>
+                          <div>
+                            <Label htmlFor="stock">Current Stock *</Label>
+                            <Input id="stock" name="stock" type="number" defaultValue={editProduct?.stock || ''} required />
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <Label htmlFor="reorder_point">Reorder Point</Label>
+                            <Input id="reorder_point" name="reorder_point" type="number" defaultValue={editProduct?.reorder_point || 10} />
+                          </div>
+                          <div>
+                            <Label htmlFor="lead_time_days">Lead Time (days)</Label>
+                            <Input id="lead_time_days" name="lead_time_days" type="number" defaultValue={editProduct?.lead_time_days || 7} />
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <Label htmlFor="category_id">Category</Label>
+                            <Select name="category_id" defaultValue={editProduct?.category_id || ''}>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select category" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {categories.map((cat) => (
+                                  <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div>
+                            <Label htmlFor="supplier_id">Supplier</Label>
+                            <Select name="supplier_id" defaultValue={editProduct?.supplier_id || ''}>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select supplier" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {suppliers.map((sup) => (
+                                  <SelectItem key={sup.id} value={sup.id}>{sup.name}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+
+                        <div>
+                          <Label htmlFor="image_url">Image URL</Label>
+                          <Input id="image_url" name="image_url" type="url" defaultValue={editProduct?.image_url || ''} placeholder="https://..." />
+                        </div>
+
+                        <Button type="submit" className="w-full">{editProduct ? 'Update Product' : 'Create Product'}</Button>
+                      </form>
+                    </DialogContent>
+                  </Dialog>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>SKU</TableHead>
+                        <TableHead>Name</TableHead>
+                        <TableHead>Category</TableHead>
+                        <TableHead>Supplier</TableHead>
+                        <TableHead>Price</TableHead>
+                        <TableHead>GST</TableHead>
+                        <TableHead>Price (incl. GST)</TableHead>
+                        <TableHead>Stock</TableHead>
+                        <TableHead>Value</TableHead>
+                        <TableHead>Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredProducts.map((product) => {
+                        const category = categories.find(c => c.id === product.category_id);
+                        const supplier = suppliers.find(s => s.id === product.supplier_id);
+                        const priceWithGST = product.price * (1 + product.gst_rate / 100);
+                        const totalValue = priceWithGST * product.stock;
+
+                        return (
+                          <TableRow key={product.id}>
+                            <TableCell className="font-mono text-xs">{product.sku || '-'}</TableCell>
+                            <TableCell className="font-medium">{product.name}</TableCell>
+                            <TableCell>{category?.name || '-'}</TableCell>
+                            <TableCell className="text-sm">{supplier?.name || '-'}</TableCell>
+                            <TableCell>{formatINR(product.price)}</TableCell>
+                            <TableCell>{product.gst_rate}%</TableCell>
+                            <TableCell className="font-semibold">{formatINR(priceWithGST)}</TableCell>
+                            <TableCell>{getStockBadge(product.stock, product.reorder_point)}</TableCell>
+                            <TableCell className="font-bold">{formatINR(totalValue)}</TableCell>
+                            <TableCell>
+                              <div className="flex gap-2">
+                                <Button size="sm" variant="outline" onClick={() => { setEditProduct(product); setProductDialogOpen(true); }}>Edit</Button>
+                                <Button size="sm" variant="destructive" onClick={() => handleDeleteProduct(product.id)}>Delete</Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Analytics Tab */}
+          <TabsContent value="analytics" className="space-y-6">
+            <div className="grid lg:grid-cols-2 gap-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Stock Distribution</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ResponsiveContainer width="100%" height={300}>
+                    <PieChart>
+                      <Pie data={stockDistribution} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label>
+                        {stockDistribution.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <RechartsTooltip />
+                      <Legend />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Products by Category</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ResponsiveContainer width="100%" height={300}>
+                    <BarChart data={categoryData}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="name" />
+                      <YAxis />
+                      <RechartsTooltip />
+                      <Bar dataKey="value" fill="#3b82f6" name="Count" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </CardContent>
+              </Card>
+
+              <Card className="lg:col-span-2">
+                <CardHeader>
+                  <CardTitle>Top 10 Products by Value (ABC Analysis)</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ResponsiveContainer width="100%" height={300}>
+                    <BarChart data={productsByValue} layout="vertical">
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis type="number" />
+                      <YAxis dataKey="name" type="category" width={150} />
+                      <RechartsTooltip formatter={(value) => formatINR(Number(value))} />
+                      <Bar dataKey="value" fill="#10b981" name="Total Value" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+
+          {/* Suppliers Tab */}
+          <TabsContent value="suppliers" className="space-y-6">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <CardTitle>Supplier Management</CardTitle>
+                <Dialog open={supplierDialogOpen} onOpenChange={setSupplierDialogOpen}>
+                  <DialogTrigger asChild>
+                    <Button size="sm" onClick={() => setEditSupplier(null)}>
+                      <Plus className="mr-2 h-4 w-4" />
+                      Add Supplier
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>{editSupplier ? 'Edit Supplier' : 'Add Supplier'}</DialogTitle>
+                    </DialogHeader>
+                    <form onSubmit={handleSaveSupplier} className="space-y-4">
+                      <div>
+                        <Label htmlFor="supplier_name">Supplier Name *</Label>
+                        <Input id="supplier_name" name="name" defaultValue={editSupplier?.name || ''} required />
+                      </div>
+                      <div>
+                        <Label htmlFor="contact_person">Contact Person</Label>
+                        <Input id="contact_person" name="contact_person" defaultValue={editSupplier?.contact_person || ''} />
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <Label htmlFor="supplier_email">Email</Label>
+                          <Input id="supplier_email" name="email" type="email" defaultValue={editSupplier?.email || ''} />
+                        </div>
+                        <div>
+                          <Label htmlFor="supplier_phone">Phone</Label>
+                          <Input id="supplier_phone" name="phone" defaultValue={editSupplier?.phone || ''} placeholder="+91-" />
+                        </div>
+                      </div>
+                      <div>
+                        <Label htmlFor="rating">Rating (1-5)</Label>
+                        <Input id="rating" name="rating" type="number" min="1" max="5" step="0.1" defaultValue={editSupplier?.rating || 3} />
+                      </div>
+                      <Button type="submit" className="w-full">{editSupplier ? 'Update Supplier' : 'Create Supplier'}</Button>
+                    </form>
+                  </DialogContent>
+                </Dialog>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Contact Person</TableHead>
+                      <TableHead>Email</TableHead>
+                      <TableHead>Phone</TableHead>
+                      <TableHead>Rating</TableHead>
+                      <TableHead>Products</TableHead>
+                      <TableHead>Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {suppliers.map((supplier) => {
+                      const productCount = products.filter(p => p.supplier_id === supplier.id).length;
+                      return (
+                        <TableRow key={supplier.id}>
+                          <TableCell className="font-medium">{supplier.name}</TableCell>
+                          <TableCell>{supplier.contact_person || '-'}</TableCell>
+                          <TableCell>{supplier.email || '-'}</TableCell>
+                          <TableCell>{supplier.phone || '-'}</TableCell>
+                          <TableCell>
+                            <Badge variant="secondary">{supplier.rating.toFixed(1)} ⭐</Badge>
+                          </TableCell>
+                          <TableCell>{productCount}</TableCell>
+                          <TableCell>
+                            <Button size="sm" variant="outline" onClick={() => { setEditSupplier(supplier); setSupplierDialogOpen(true); }}>Edit</Button>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Orders Tab */}
+          <TabsContent value="orders" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Recent Orders</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Order ID</TableHead>
+                      <TableHead>Customer</TableHead>
+                      <TableHead>Total</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {orders.slice(0, 20).map((order) => (
+                      <TableRow key={order.id}>
+                        <TableCell className="font-mono text-xs">{order.id.slice(0, 8)}</TableCell>
+                        <TableCell>{order.profiles?.email}</TableCell>
+                        <TableCell className="font-semibold">{formatINR(order.total)}</TableCell>
+                        <TableCell>
+                          <Badge variant={order.status === 'completed' ? 'default' : order.status === 'pending' ? 'secondary' : 'destructive'}>
+                            {order.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>{new Date(order.created_at).toLocaleDateString()}</TableCell>
+                        <TableCell>
+                          <Select defaultValue={order.status} onValueChange={(val) => handleUpdateOrderStatus(order.id, val)}>
+                            <SelectTrigger className="w-32">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="pending">Pending</SelectItem>
+                              <SelectItem value="processing">Processing</SelectItem>
+                              <SelectItem value="completed">Completed</SelectItem>
+                              <SelectItem value="cancelled">Cancelled</SelectItem>
+                            </SelectContent>
+                          </Select>
                         </TableCell>
                       </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Recent Inventory Logs */}
-        <Card className="mb-8">
-          <CardHeader>
-            <CardTitle>Recent Inventory Changes</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Product</TableHead>
-                  <TableHead>Change Type</TableHead>
-                  <TableHead>Quantity</TableHead>
-                  <TableHead>Date</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {inventoryLogs.map((log) => (
-                  <TableRow key={log.id}>
-                    <TableCell className="font-medium">{log.products?.name || 'Unknown'}</TableCell>
-                    <TableCell>
-                      <Badge variant={log.change_type === 'sale' ? 'default' : 'secondary'}>
-                        {log.change_type}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className={log.quantity < 0 ? 'text-red-600' : 'text-green-600'}>
-                      {log.quantity > 0 ? '+' : ''}{log.quantity}
-                    </TableCell>
-                    <TableCell>
-                      {new Date(log.date).toLocaleString('en-IN')}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-
-        {/* Orders */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Recent Orders</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Customer</TableHead>
-                  <TableHead>Total</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {orders.slice(0, 10).map((order) => (
-                  <TableRow key={order.id}>
-                    <TableCell>{order.profiles.email}</TableCell>
-                    <TableCell className="font-semibold">{formatINR(Number(order.total))}</TableCell>
-                    <TableCell>
-                      <Badge
-                        variant={
-                          order.status === 'completed'
-                            ? 'default'
-                            : order.status === 'cancelled'
-                            ? 'destructive'
-                            : 'secondary'
-                        }
-                      >
-                        {order.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      {new Date(order.created_at).toLocaleDateString('en-IN')}
-                    </TableCell>
-                    <TableCell>
-                      <Select
-                        value={order.status}
-                        onValueChange={(value) =>
-                          handleUpdateOrderStatus(order.id, value)
-                        }
-                      >
-                        <SelectTrigger className="w-32">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="pending">Pending</SelectItem>
-                          <SelectItem value="processing">Processing</SelectItem>
-                          <SelectItem value="completed">Completed</SelectItem>
-                          <SelectItem value="cancelled">Cancelled</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
       </div>
+
+      {/* SKU Scanner Dialog */}
+      <Dialog open={scannerOpen} onOpenChange={setScannerOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Scan or Enter SKU</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="sku_scan">Enter SKU</Label>
+              <Input
+                id="sku_scan"
+                value={scannedSKU}
+                onChange={(e) => setScannedSKU(e.target.value)}
+                placeholder="PROD-001"
+                onKeyDown={(e) => e.key === 'Enter' && handleSKUScan()}
+              />
+            </div>
+            <Button onClick={handleSKUScan} className="w-full">Search Product</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
+
+  function handleUpdateOrderStatus(orderId: string, status: string) {
+    supabase.from('orders').update({ status }).eq('id', orderId).then(() => {
+      toast.success('Order status updated');
+      fetchData();
+    });
+  }
 };
 
 export default Dashboard;
