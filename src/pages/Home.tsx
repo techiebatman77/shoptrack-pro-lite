@@ -46,60 +46,65 @@ const Home = () => {
       <Navbar />
 
       {/* Hero Section */}
-      <section className="relative overflow-hidden bg-gradient-to-r from-primary to-accent py-20">
+      <section className="relative overflow-hidden border-b bg-card py-24">
         <div className="container mx-auto px-4">
-          <div className="max-w-3xl">
-            <h1 className="text-5xl font-bold text-primary-foreground mb-6">
+          <div className="max-w-4xl mx-auto text-center">
+            <h1 className="text-6xl font-bold text-foreground mb-6 tracking-tight">
               Welcome to ShopTrack Pro
             </h1>
-            <p className="text-xl text-primary-foreground/90 mb-8">
+            <p className="text-xl text-muted-foreground mb-10 max-w-2xl mx-auto">
               Your complete e-commerce and inventory management solution. Browse products, manage orders, and track inventory all in one place.
             </p>
-            <div className="flex gap-4">
+            <div className="flex gap-4 justify-center">
               <Button
                 size="lg"
-                variant="secondary"
                 onClick={() => navigate('/products')}
-                className="gap-2"
+                className="gap-2 h-12 px-8"
               >
                 Shop Now <ArrowRight className="h-4 w-4" />
+              </Button>
+              <Button
+                size="lg"
+                variant="outline"
+                onClick={() => navigate('/products')}
+                className="h-12 px-8"
+              >
+                Learn More
               </Button>
             </div>
           </div>
         </div>
-        <div className="absolute -right-20 -bottom-20 h-80 w-80 rounded-full bg-primary-foreground/10 blur-3xl" />
-        <div className="absolute -left-20 -top-20 h-80 w-80 rounded-full bg-accent/20 blur-3xl" />
       </section>
 
       {/* Features */}
-      <section className="py-16 bg-muted/30">
+      <section className="py-20">
         <div className="container mx-auto px-4">
           <div className="grid md:grid-cols-3 gap-8">
-            <div className="text-center">
-              <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
-                <TrendingUp className="h-8 w-8 text-primary" />
+            <div className="bg-card border rounded-lg p-8 hover:shadow-lg transition-all">
+              <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+                <TrendingUp className="h-6 w-6" />
               </div>
-              <h3 className="font-semibold text-lg mb-2">Real-time Analytics</h3>
-              <p className="text-muted-foreground">
-                Track sales and inventory with live dashboard updates
+              <h3 className="font-semibold text-lg mb-3 text-foreground">Real-time Analytics</h3>
+              <p className="text-muted-foreground text-sm leading-relaxed">
+                Track sales and inventory with live dashboard updates and comprehensive reporting.
               </p>
             </div>
-            <div className="text-center">
-              <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
-                <Package className="h-8 w-8 text-primary" />
+            <div className="bg-card border rounded-lg p-8 hover:shadow-lg transition-all">
+              <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+                <Package className="h-6 w-6" />
               </div>
-              <h3 className="font-semibold text-lg mb-2">Inventory Management</h3>
-              <p className="text-muted-foreground">
-                Easy stock management with low-stock alerts
+              <h3 className="font-semibold text-lg mb-3 text-foreground">Inventory Management</h3>
+              <p className="text-muted-foreground text-sm leading-relaxed">
+                Easy stock management with low-stock alerts and automated reordering.
               </p>
             </div>
-            <div className="text-center">
-              <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
-                <ShieldCheck className="h-8 w-8 text-primary" />
+            <div className="bg-card border rounded-lg p-8 hover:shadow-lg transition-all">
+              <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+                <ShieldCheck className="h-6 w-6" />
               </div>
-              <h3 className="font-semibold text-lg mb-2">Secure Checkout</h3>
-              <p className="text-muted-foreground">
-                Safe and reliable order processing
+              <h3 className="font-semibold text-lg mb-3 text-foreground">Secure Checkout</h3>
+              <p className="text-muted-foreground text-sm leading-relaxed">
+                Safe and reliable order processing with industry-standard security.
               </p>
             </div>
           </div>
@@ -107,12 +112,15 @@ const Home = () => {
       </section>
 
       {/* Featured Products */}
-      <section className="py-16">
+      <section className="py-20 bg-muted/30">
         <div className="container mx-auto px-4">
-          <div className="mb-8 flex items-center justify-between">
-            <h2 className="text-3xl font-bold">Featured Products</h2>
-            <Button variant="ghost" onClick={() => navigate('/products')}>
-              View All <ArrowRight className="ml-2 h-4 w-4" />
+          <div className="mb-12 flex items-center justify-between">
+            <div>
+              <h2 className="text-3xl font-bold text-foreground mb-2">Featured Products</h2>
+              <p className="text-muted-foreground">Discover our latest arrivals and best sellers</p>
+            </div>
+            <Button variant="outline" onClick={() => navigate('/products')} className="gap-2">
+              View All <ArrowRight className="h-4 w-4" />
             </Button>
           </div>
 
