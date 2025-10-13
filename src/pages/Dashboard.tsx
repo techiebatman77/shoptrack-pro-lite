@@ -80,6 +80,7 @@ interface Order {
   total: number;
   status: string;
   created_at: string;
+  payment_mode?: string;
   profiles: { email: string };
 }
 
@@ -90,6 +91,26 @@ interface InventoryLog {
   quantity: number;
   date: string;
   products: { name: string };
+}
+
+interface Return {
+  id: string;
+  order_id: string;
+  product_id: string;
+  quantity: number;
+  reason: string;
+  status: string;
+  created_at: string;
+  products: { name: string };
+}
+
+interface Payment {
+  id: string;
+  order_id: string;
+  amount: number;
+  mode: string;
+  status: string;
+  created_at: string;
 }
 
 const productSchema = z.object({
@@ -124,6 +145,8 @@ const Dashboard = () => {
   const [orders, setOrders] = useState<Order[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [inventoryLogs, setInventoryLogs] = useState<InventoryLog[]>([]);
+  const [returns, setReturns] = useState<Return[]>([]);
+  const [payments, setPayments] = useState<Payment[]>([]);
   const [editProduct, setEditProduct] = useState<Product | null>(null);
   const [editSupplier, setEditSupplier] = useState<Supplier | null>(null);
   const [productDialogOpen, setProductDialogOpen] = useState(false);
@@ -146,12 +169,14 @@ const Dashboard = () => {
   }, [userRole]);
 
   const fetchData = async () => {
-    const [productsRes, suppliersRes, ordersRes, categoriesRes, logsRes] = await Promise.all([
+    const [productsRes, suppliersRes, ordersRes, categoriesRes, logsRes, returnsRes, paymentsRes] = await Promise.all([
       supabase.from('products').select('*').order('created_at', { ascending: false }),
       supabase.from('suppliers').select('*').order('name'),
-      supabase.from('orders').select('id, total, status, created_at, user_id, profiles!orders_user_id_fkey(email)'),
+      supabase.from('orders').select('id, total, status, created_at, user_id, payment_mode, profiles!orders_user_id_fkey(email)'),
       supabase.from('categories').select('*'),
       supabase.from('inventory_logs').select('*, products(name)').order('date', { ascending: false }).limit(50),
+      supabase.from('returns').select('*, products(name)').order('created_at', { ascending: false }),
+      supabase.from('payments').select('*').order('created_at', { ascending: false }).limit(100),
     ]);
 
     const productsData = productsRes.data || [];
@@ -165,11 +190,18 @@ const Dashboard = () => {
       products: Array.isArray(log.products) ? log.products[0] : log.products
     })) as InventoryLog[];
 
+    const returnsData = (returnsRes.data || []).map(ret => ({
+      ...ret,
+      products: Array.isArray(ret.products) ? ret.products[0] : ret.products
+    })) as Return[];
+
     setProducts(productsData);
     setSuppliers(suppliersRes.data || []);
     setOrders(ordersData);
     setCategories(categoriesRes.data || []);
     setInventoryLogs(logsData);
+    setReturns(returnsData);
+    setPayments(paymentsRes.data || []);
   };
 
   const handleSaveProduct = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -452,9 +484,11 @@ const Dashboard = () => {
         </div>
 
         <Tabs defaultValue="inventory" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-6">
             <TabsTrigger value="inventory">Inventory</TabsTrigger>
             <TabsTrigger value="analytics">Analytics</TabsTrigger>
+            <TabsTrigger value="forecasting">Forecasting</TabsTrigger>
+            <TabsTrigger value="returns">Returns</TabsTrigger>
             <TabsTrigger value="suppliers">Suppliers</TabsTrigger>
             <TabsTrigger value="orders">Orders</TabsTrigger>
           </TabsList>
@@ -678,7 +712,221 @@ const Dashboard = () => {
                   </ResponsiveContainer>
                 </CardContent>
               </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Payment Modes Distribution</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ResponsiveContainer width="100%" height={300}>
+                    <PieChart>
+                      <Pie 
+                        data={[
+                          { name: 'UPI', value: orders.filter(o => o.payment_mode === 'UPI').length, color: '#3b82f6' },
+                          { name: 'Card', value: orders.filter(o => o.payment_mode === 'Card').length, color: '#10b981' },
+                          { name: 'COD', value: orders.filter(o => o.payment_mode === 'COD').length, color: '#f59e0b' },
+                        ]} 
+                        dataKey="value" 
+                        nameKey="name" 
+                        cx="50%" 
+                        cy="50%" 
+                        outerRadius={80} 
+                        label
+                      >
+                        {[
+                          { name: 'UPI', value: orders.filter(o => o.payment_mode === 'UPI').length, color: '#3b82f6' },
+                          { name: 'Card', value: orders.filter(o => o.payment_mode === 'Card').length, color: '#10b981' },
+                          { name: 'COD', value: orders.filter(o => o.payment_mode === 'COD').length, color: '#f59e0b' },
+                        ].map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <RechartsTooltip />
+                      <Legend />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Top 5 Customers by Order Value</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {(() => {
+                    const customerTotals = orders.reduce((acc, order) => {
+                      const email = order.profiles?.email || 'Unknown';
+                      acc[email] = (acc[email] || 0) + Number(order.total);
+                      return acc;
+                    }, {} as Record<string, number>);
+
+                    const topCustomers = Object.entries(customerTotals)
+                      .map(([email, total]) => ({ email, total }))
+                      .sort((a, b) => b.total - a.total)
+                      .slice(0, 5);
+
+                    return (
+                      <div className="space-y-3">
+                        {topCustomers.map((customer, idx) => (
+                          <div key={idx} className="flex justify-between items-center">
+                            <span className="text-sm">{customer.email}</span>
+                            <Badge variant="secondary">{formatINR(customer.total)}</Badge>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
+                </CardContent>
+              </Card>
             </div>
+          </TabsContent>
+
+          {/* Forecasting Tab */}
+          <TabsContent value="forecasting" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Demand Forecasting & Reorder Suggestions</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {(() => {
+                  // Calculate monthly sales for each product from last 6 months
+                  const sixMonthsAgo = new Date();
+                  sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+
+                  const productSales = inventoryLogs
+                    .filter(log => log.change_type === 'sale' && new Date(log.date) >= sixMonthsAgo)
+                    .reduce((acc, log) => {
+                      acc[log.product_id] = (acc[log.product_id] || 0) + Math.abs(log.quantity);
+                      return acc;
+                    }, {} as Record<string, number>);
+
+                  const forecasts = products
+                    .filter(p => productSales[p.id])
+                    .map(p => {
+                      const totalSold = productSales[p.id] || 0;
+                      const avgMonthlySales = totalSold / 6;
+                      const predictedDemand = Math.ceil(avgMonthlySales * 1.5); // 1.5x safety factor
+                      const daysUntilStockout = p.stock > 0 ? Math.floor(p.stock / (avgMonthlySales / 30)) : 0;
+                      const suggestedReorder = Math.max(predictedDemand, p.reorder_point);
+
+                      return {
+                        ...p,
+                        avgMonthlySales,
+                        predictedDemand,
+                        daysUntilStockout,
+                        suggestedReorder,
+                        urgency: daysUntilStockout < p.lead_time_days ? 'critical' : daysUntilStockout < 30 ? 'high' : 'normal'
+                      };
+                    })
+                    .sort((a, b) => {
+                      if (a.urgency === 'critical' && b.urgency !== 'critical') return -1;
+                      if (a.urgency !== 'critical' && b.urgency === 'critical') return 1;
+                      return a.daysUntilStockout - b.daysUntilStockout;
+                    })
+                    .slice(0, 20);
+
+                  return (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Product</TableHead>
+                          <TableHead>Current Stock</TableHead>
+                          <TableHead>Avg Monthly Sales</TableHead>
+                          <TableHead>Days Until Stockout</TableHead>
+                          <TableHead>Predicted Demand (Next Month)</TableHead>
+                          <TableHead>Suggested Reorder Qty</TableHead>
+                          <TableHead>Lead Time</TableHead>
+                          <TableHead>Urgency</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {forecasts.map((forecast) => (
+                          <TableRow key={forecast.id}>
+                            <TableCell className="font-medium">{forecast.name}</TableCell>
+                            <TableCell>{getStockBadge(forecast.stock, forecast.reorder_point)}</TableCell>
+                            <TableCell>{forecast.avgMonthlySales.toFixed(1)}</TableCell>
+                            <TableCell>
+                              <Badge variant={forecast.daysUntilStockout < forecast.lead_time_days ? 'destructive' : 'secondary'}>
+                                {forecast.daysUntilStockout} days
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="font-semibold">{forecast.predictedDemand} units</TableCell>
+                            <TableCell className="text-primary font-bold">{forecast.suggestedReorder} units</TableCell>
+                            <TableCell>{forecast.lead_time_days} days</TableCell>
+                            <TableCell>
+                              <Badge variant={
+                                forecast.urgency === 'critical' ? 'destructive' : 
+                                forecast.urgency === 'high' ? 'default' : 'secondary'
+                              }>
+                                {forecast.urgency.toUpperCase()}
+                              </Badge>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  );
+                })()}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Returns Tab */}
+          <TabsContent value="returns" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Returns Management</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Return ID</TableHead>
+                      <TableHead>Product</TableHead>
+                      <TableHead>Quantity</TableHead>
+                      <TableHead>Reason</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {returns.map((ret) => (
+                      <TableRow key={ret.id}>
+                        <TableCell className="font-mono text-xs">{ret.id.slice(0, 8)}</TableCell>
+                        <TableCell className="font-medium">{ret.products?.name}</TableCell>
+                        <TableCell>{ret.quantity}</TableCell>
+                        <TableCell className="text-sm">{ret.reason}</TableCell>
+                        <TableCell>
+                          <Badge variant={
+                            ret.status === 'approved' || ret.status === 'restocked' ? 'default' :
+                            ret.status === 'rejected' ? 'destructive' : 'secondary'
+                          }>
+                            {ret.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>{new Date(ret.created_at).toLocaleDateString()}</TableCell>
+                        <TableCell>
+                          {ret.status === 'pending' && (
+                            <div className="flex gap-2">
+                              <Button size="sm" onClick={() => handleReturnAction(ret.id, ret.product_id, ret.quantity, 'approved')}>
+                                Approve
+                              </Button>
+                              <Button size="sm" variant="outline" onClick={() => handleReturnAction(ret.id, ret.product_id, ret.quantity, 'restocked')}>
+                                Restock
+                              </Button>
+                              <Button size="sm" variant="destructive" onClick={() => handleReturnAction(ret.id, ret.product_id, ret.quantity, 'rejected')}>
+                                Reject
+                              </Button>
+                            </div>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
           </TabsContent>
 
           {/* Suppliers Tab */}
@@ -845,6 +1093,41 @@ const Dashboard = () => {
       toast.success('Order status updated');
       fetchData();
     });
+  }
+
+  async function handleReturnAction(returnId: string, productId: string, quantity: number, action: string) {
+    try {
+      // Update return status
+      await supabase.from('returns').update({ status: action }).eq('id', returnId);
+
+      // If restocking, add back to inventory
+      if (action === 'restocked') {
+        const { data: product } = await supabase
+          .from('products')
+          .select('stock')
+          .eq('id', productId)
+          .single();
+
+        if (product) {
+          await supabase
+            .from('products')
+            .update({ stock: product.stock + quantity })
+            .eq('id', productId);
+
+          await supabase.from('inventory_logs').insert({
+            product_id: productId,
+            change_type: 'return',
+            quantity: quantity,
+          });
+        }
+      }
+
+      toast.success(`Return ${action}!`);
+      fetchData();
+    } catch (error) {
+      console.error('Error handling return:', error);
+      toast.error('Failed to process return');
+    }
   }
 };
 

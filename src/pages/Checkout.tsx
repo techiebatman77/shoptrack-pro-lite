@@ -7,8 +7,11 @@ import { useCart } from '@/contexts/CartContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { CheckCircle2 } from 'lucide-react';
+import { CheckCircle2, CreditCard, Smartphone, Banknote } from 'lucide-react';
 import { formatINR } from '@/lib/formatINR';
+import { Label } from '@/components/ui/label';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Textarea } from '@/components/ui/textarea';
 
 const Checkout = () => {
   const { items, total, clearCart } = useCart();
@@ -16,6 +19,8 @@ const Checkout = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [orderComplete, setOrderComplete] = useState(false);
+  const [paymentMode, setPaymentMode] = useState<'UPI' | 'Card' | 'COD'>('UPI');
+  const [customerNotes, setCustomerNotes] = useState('');
 
   if (!user) {
     navigate('/auth');
@@ -31,13 +36,15 @@ const Checkout = () => {
     setLoading(true);
 
     try {
-      // Create order
+      // Create order with payment mode and notes
       const { data: order, error: orderError } = await supabase
         .from('orders')
         .insert({
           user_id: user.id,
           total,
           status: 'pending',
+          payment_mode: paymentMode,
+          customer_notes: customerNotes || null,
         })
         .select()
         .single();
@@ -84,6 +91,14 @@ const Checkout = () => {
         });
       }
 
+      // Create payment record
+      await supabase.from('payments').insert({
+        order_id: order.id,
+        amount: total,
+        mode: paymentMode,
+        status: paymentMode === 'COD' ? 'pending' : 'paid',
+      });
+
       clearCart();
       setOrderComplete(true);
       toast.success('Order placed successfully!');
@@ -129,7 +144,7 @@ const Checkout = () => {
         <h1 className="text-4xl font-bold mb-8">Checkout</h1>
 
         <div className="grid lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-2">
+          <div className="lg:col-span-2 space-y-6">
             <Card>
               <CardContent className="p-6 space-y-6">
                 <div>
@@ -146,6 +161,58 @@ const Checkout = () => {
                       </div>
                     ))}
                   </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="p-6 space-y-4">
+                <h2 className="text-xl font-semibold">Payment Method</h2>
+                <RadioGroup value={paymentMode} onValueChange={(val) => setPaymentMode(val as 'UPI' | 'Card' | 'COD')}>
+                  <div className="flex items-center space-x-3 p-4 border rounded-lg cursor-pointer hover:bg-accent" onClick={() => setPaymentMode('UPI')}>
+                    <RadioGroupItem value="UPI" id="upi" />
+                    <Label htmlFor="upi" className="flex items-center gap-3 cursor-pointer flex-1">
+                      <Smartphone className="h-5 w-5 text-primary" />
+                      <div>
+                        <div className="font-semibold">UPI</div>
+                        <div className="text-sm text-muted-foreground">GPay, PhonePe, Paytm</div>
+                      </div>
+                    </Label>
+                  </div>
+                  
+                  <div className="flex items-center space-x-3 p-4 border rounded-lg cursor-pointer hover:bg-accent" onClick={() => setPaymentMode('Card')}>
+                    <RadioGroupItem value="Card" id="card" />
+                    <Label htmlFor="card" className="flex items-center gap-3 cursor-pointer flex-1">
+                      <CreditCard className="h-5 w-5 text-primary" />
+                      <div>
+                        <div className="font-semibold">Credit/Debit Card</div>
+                        <div className="text-sm text-muted-foreground">Visa, Mastercard, RuPay</div>
+                      </div>
+                    </Label>
+                  </div>
+                  
+                  <div className="flex items-center space-x-3 p-4 border rounded-lg cursor-pointer hover:bg-accent" onClick={() => setPaymentMode('COD')}>
+                    <RadioGroupItem value="COD" id="cod" />
+                    <Label htmlFor="cod" className="flex items-center gap-3 cursor-pointer flex-1">
+                      <Banknote className="h-5 w-5 text-primary" />
+                      <div>
+                        <div className="font-semibold">Cash on Delivery</div>
+                        <div className="text-sm text-muted-foreground">Pay when you receive</div>
+                      </div>
+                    </Label>
+                  </div>
+                </RadioGroup>
+
+                <div className="pt-4">
+                  <Label htmlFor="notes">Order Notes (Optional)</Label>
+                  <Textarea
+                    id="notes"
+                    placeholder="Special instructions for your order..."
+                    value={customerNotes}
+                    onChange={(e) => setCustomerNotes(e.target.value)}
+                    rows={3}
+                    maxLength={500}
+                  />
                 </div>
               </CardContent>
             </Card>
