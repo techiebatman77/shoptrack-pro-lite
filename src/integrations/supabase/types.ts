@@ -98,6 +98,20 @@ export type Database = {
             referencedRelation: "products"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "inventory_logs_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "vw_low_stock_alert"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inventory_logs_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "vw_product_sales_summary"
+            referencedColumns: ["id"]
+          },
         ]
       }
       order_items: {
@@ -135,6 +149,20 @@ export type Database = {
             columns: ["product_id"]
             isOneToOne: false
             referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_items_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "vw_low_stock_alert"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_items_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "vw_product_sales_summary"
             referencedColumns: ["id"]
           },
         ]
@@ -209,6 +237,7 @@ export type Database = {
           category_id: string | null
           created_at: string | null
           description: string | null
+          discount_percentage: number | null
           gst_rate: number | null
           id: string
           image_url: string | null
@@ -227,6 +256,7 @@ export type Database = {
           category_id?: string | null
           created_at?: string | null
           description?: string | null
+          discount_percentage?: number | null
           gst_rate?: number | null
           id?: string
           image_url?: string | null
@@ -245,6 +275,7 @@ export type Database = {
           category_id?: string | null
           created_at?: string | null
           description?: string | null
+          discount_percentage?: number | null
           gst_rate?: number | null
           id?: string
           image_url?: string | null
@@ -337,6 +368,65 @@ export type Database = {
             referencedRelation: "products"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "returns_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "vw_low_stock_alert"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "returns_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "vw_product_sales_summary"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      supplier_performance: {
+        Row: {
+          created_at: string | null
+          id: string
+          month: string
+          on_time_deliveries: number | null
+          quality_score: number | null
+          supplier_id: string | null
+          total_orders: number | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          month: string
+          on_time_deliveries?: number | null
+          quality_score?: number | null
+          supplier_id?: string | null
+          total_orders?: number | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          month?: string
+          on_time_deliveries?: number | null
+          quality_score?: number | null
+          supplier_id?: string | null
+          total_orders?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fk_supplier_performance_supplier"
+            columns: ["supplier_id"]
+            isOneToOne: false
+            referencedRelation: "suppliers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "supplier_performance_supplier_id_fkey"
+            columns: ["supplier_id"]
+            isOneToOne: false
+            referencedRelation: "suppliers"
+            referencedColumns: ["id"]
+          },
         ]
       }
       suppliers: {
@@ -395,9 +485,80 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      vw_customer_orders: {
+        Row: {
+          avg_order_value: number | null
+          email: string | null
+          first_order_date: string | null
+          last_order_date: string | null
+          total_orders: number | null
+          total_spent: number | null
+          user_id: string | null
+        }
+        Relationships: []
+      }
+      vw_low_stock_alert: {
+        Row: {
+          category: string | null
+          id: string | null
+          name: string | null
+          reorder_point: number | null
+          stock: number | null
+          supplier_contact: string | null
+          supplier_name: string | null
+          units_to_reorder: number | null
+        }
+        Relationships: []
+      }
+      vw_monthly_sales: {
+        Row: {
+          avg_order_value: number | null
+          month: string | null
+          total_orders: number | null
+          total_revenue: number | null
+          unique_customers: number | null
+        }
+        Relationships: []
+      }
+      vw_payment_analysis: {
+        Row: {
+          avg_transaction_value: number | null
+          max_transaction: number | null
+          min_transaction: number | null
+          payment_mode: string | null
+          total_amount: number | null
+          transaction_count: number | null
+        }
+        Relationships: []
+      }
+      vw_product_sales_summary: {
+        Row: {
+          category_id: string | null
+          category_name: string | null
+          id: string | null
+          name: string | null
+          price: number | null
+          stock: number | null
+          total_orders: number | null
+          total_revenue: number | null
+          total_units_sold: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "products_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "categories"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
+      bulk_update_discount: {
+        Args: { p_category_id: string; p_discount: number }
+        Returns: number
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]

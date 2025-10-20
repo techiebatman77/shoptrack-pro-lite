@@ -1,5 +1,5 @@
 import { Link, useNavigate } from 'react-router-dom';
-import { ShoppingCart, User, LayoutDashboard, LogOut, Store } from 'lucide-react';
+import { ShoppingCart, User, LayoutDashboard, LogOut, Store, Database } from 'lucide-react';
 import { Button } from './ui/button';
 import { useAuth } from '@/contexts/AuthContext';
 import { useCart } from '@/contexts/CartContext';
@@ -30,6 +30,13 @@ export const Navbar = () => {
           <div className="flex items-center gap-2">
             <Button variant="ghost" size="sm" asChild>
               <Link to="/products">Products</Link>
+            </Button>
+            
+            <Button variant="ghost" size="sm" asChild>
+              <Link to="/sql-concepts">
+                <Database className="h-4 w-4 mr-2" />
+                SQL
+              </Link>
             </Button>
 
             <Button variant="ghost" size="sm" className="relative" asChild>
