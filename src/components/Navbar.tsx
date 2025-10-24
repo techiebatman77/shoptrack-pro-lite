@@ -31,13 +31,6 @@ export const Navbar = () => {
             <Button variant="ghost" size="sm" asChild>
               <Link to="/products">Products</Link>
             </Button>
-            
-            <Button variant="ghost" size="sm" asChild>
-              <Link to="/sql-concepts">
-                <Database className="h-4 w-4 mr-2" />
-                SQL
-              </Link>
-            </Button>
 
             <Button variant="ghost" size="sm" className="relative" asChild>
               <Link to="/cart">
