@@ -317,6 +317,42 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;`,
           explanation: "Tracks all changes to products for compliance"
+        },
+        {
+          name: "Cart Stock Update",
+          code: `CREATE FUNCTION update_stock_on_cart_change()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF (TG_OP = 'INSERT') THEN
+    -- Reserve stock when adding to cart
+    UPDATE products SET stock = stock - NEW.quantity
+    WHERE id = NEW.product_id;
+    
+    INSERT INTO inventory_logs 
+      (product_id, quantity, change_type)
+    VALUES (NEW.product_id, -NEW.quantity, 'cart_reserved');
+    
+  ELSIF (TG_OP = 'UPDATE') THEN
+    -- Adjust stock based on quantity difference
+    UPDATE products 
+    SET stock = stock - (NEW.quantity - OLD.quantity)
+    WHERE id = NEW.product_id;
+    
+  ELSIF (TG_OP = 'DELETE') THEN
+    -- Release reserved stock
+    UPDATE products SET stock = stock + OLD.quantity
+    WHERE id = OLD.product_id;
+    RETURN OLD;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER cart_stock_update_trigger
+AFTER INSERT OR UPDATE OR DELETE ON cart_items
+FOR EACH ROW
+EXECUTE FUNCTION update_stock_on_cart_change();`,
+          explanation: "Real-time stock updates when items added/removed from cart"
         }
       ]
     },
