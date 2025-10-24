@@ -26,69 +26,46 @@ export const CartProvider = ({ children }: { children: React.ReactNode }) => {
   const { user } = useAuth();
   const [items, setItems] = useState<CartItem[]>([]);
 
-  // Load cart from database when user logs in
+  // Fetch cart items from database
   useEffect(() => {
-    if (user) {
-      loadCart();
-      
-      // Subscribe to real-time updates
-      const channel = supabase
-        .channel('cart-changes')
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'cart_items',
-            filter: `user_id=eq.${user.id}`
-          },
-          () => {
-            loadCart();
-          }
-        )
-        .subscribe();
+    const fetchCartItems = async () => {
+      if (!user) {
+        setItems([]);
+        return;
+      }
 
-      return () => {
-        supabase.removeChannel(channel);
-      };
-    } else {
-      setItems([]);
-    }
+      const { data, error } = await supabase
+        .from('cart_items')
+        .select(`
+          quantity,
+          product_id,
+          products (
+            id,
+            name,
+            price,
+            image_url
+          )
+        `)
+        .eq('user_id', user.id);
+
+      if (error) {
+        console.error('Error fetching cart:', error);
+        return;
+      }
+
+      const cartItems = data?.map((item: any) => ({
+        id: item.products.id,
+        name: item.products.name,
+        price: item.products.price,
+        quantity: item.quantity,
+        image_url: item.products.image_url,
+      })) || [];
+
+      setItems(cartItems);
+    };
+
+    fetchCartItems();
   }, [user]);
-
-  const loadCart = async () => {
-    if (!user) return;
-    
-    const { data, error } = await supabase
-      .from('cart_items')
-      .select(`
-        id,
-        quantity,
-        product_id,
-        products (
-          id,
-          name,
-          price,
-          image_url
-        )
-      `)
-      .eq('user_id', user.id);
-
-    if (error) {
-      console.error('Error loading cart:', error);
-      return;
-    }
-
-    const cartItems: CartItem[] = (data || []).map((item: any) => ({
-      id: item.product_id,
-      name: item.products.name,
-      price: item.products.price,
-      quantity: item.quantity,
-      image_url: item.products.image_url,
-    }));
-
-    setItems(cartItems);
-  };
 
   const addToCart = async (product: Omit<CartItem, 'quantity'>) => {
     if (!user) {
@@ -99,7 +76,6 @@ export const CartProvider = ({ children }: { children: React.ReactNode }) => {
     const existing = items.find((item) => item.id === product.id);
     
     if (existing) {
-      // Update quantity
       const { error } = await supabase
         .from('cart_items')
         .update({ quantity: existing.quantity + 1 })
@@ -108,25 +84,34 @@ export const CartProvider = ({ children }: { children: React.ReactNode }) => {
 
       if (error) {
         toast.error('Failed to update cart');
-        console.error('Error updating cart:', error);
+        console.error(error);
         return;
       }
+
+      setItems((prev) =>
+        prev.map((item) =>
+          item.id === product.id
+            ? { ...item, quantity: item.quantity + 1 }
+            : item
+        )
+      );
       toast.success('Updated cart quantity');
     } else {
-      // Insert new item
       const { error } = await supabase
         .from('cart_items')
         .insert({
           user_id: user.id,
           product_id: product.id,
-          quantity: 1
+          quantity: 1,
         });
 
       if (error) {
         toast.error('Failed to add to cart');
-        console.error('Error adding to cart:', error);
+        console.error(error);
         return;
       }
+
+      setItems((prev) => [...prev, { ...product, quantity: 1 }]);
       toast.success('Added to cart!');
     }
   };
@@ -142,9 +127,11 @@ export const CartProvider = ({ children }: { children: React.ReactNode }) => {
 
     if (error) {
       toast.error('Failed to remove from cart');
-      console.error('Error removing from cart:', error);
+      console.error(error);
       return;
     }
+
+    setItems((prev) => prev.filter((item) => item.id !== id));
     toast.success('Removed from cart');
   };
 
@@ -164,8 +151,13 @@ export const CartProvider = ({ children }: { children: React.ReactNode }) => {
 
     if (error) {
       toast.error('Failed to update quantity');
-      console.error('Error updating quantity:', error);
+      console.error(error);
+      return;
     }
+
+    setItems((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, quantity } : item))
+    );
   };
 
   const clearCart = async () => {
@@ -178,7 +170,10 @@ export const CartProvider = ({ children }: { children: React.ReactNode }) => {
 
     if (error) {
       console.error('Error clearing cart:', error);
+      return;
     }
+
+    setItems([]);
   };
 
   const total = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
